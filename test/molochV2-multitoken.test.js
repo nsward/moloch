@@ -438,7 +438,7 @@ contract('Moloch', ([creator, summoner, applicant1, applicant2, processor, deleg
 
         // Attempt to process the proposal
         await moloch.processProposal(firstProposalIndex, { from: processor })
-          .should.be.rejectedWith('token transfer to guild bank failed')
+          .should.be.rejectedWith('ERC20Wrapper.transfer: Bad return value')
 
         // Ensure balances do not change
         await verifyBalances({
@@ -541,7 +541,7 @@ contract('Moloch', ([creator, summoner, applicant1, applicant2, processor, deleg
         await moveForwardPeriods(deploymentConfig.GRACE_DURATON_IN_PERIODS)
 
         await moloch.processProposal(thirdProposalIndex, { from: processor })
-          .should.be.rejectedWith('token payment to applicant failed')
+          .should.be.rejectedWith('ERC20Wrapper.transfer: Bad return value')
       })
 
       it('require revert - fail to withdraw payment token with no revert message', async function () {
@@ -708,7 +708,7 @@ contract('Moloch', ([creator, summoner, applicant1, applicant2, processor, deleg
 
       // fails as token has transfer disabled (fails moving to guild bank)
       await moloch.processProposal(firstProposalIndex, { from: processor })
-        .should.be.rejectedWith('token transfer to guild bank failed')
+        .should.be.rejectedWith('ERC20Wrapper.transfer: Bad return value')
 
       // move past emergency exit
       await moveForwardPeriods(deploymentConfig.EMERGENCY_EXIT_WAIT_IN_PERIODS)
