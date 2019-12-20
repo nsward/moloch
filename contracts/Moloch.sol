@@ -1,7 +1,6 @@
 pragma solidity 0.5.3;
 
 import "./oz/SafeMath.sol";
-import "./oz/IERC20.sol";
 import "./GuildBank.sol";
 
 contract Moloch {
@@ -22,7 +21,7 @@ contract Moloch {
     uint256 public processingReward; // default = 0.1 - amount of ETH to give to whoever processes a proposal
     uint256 public summoningTime; // needed to determine the current period
 
-    IERC20 public depositToken; // deposit token contract reference; default = wETH
+    address public depositToken; // deposit token contract reference; default = wETH
     GuildBank public guildBank; // guild bank contract reference
 
     // HARD-CODED LIMITS
@@ -78,9 +77,9 @@ contract Moloch {
         uint256 sharesRequested; // the # of shares the applicant is requesting
         uint256 lootRequested; // the amount of loot the applicant is requesting
         uint256 tributeOffered; // amount of tokens offered as tribute
-        IERC20 tributeToken; // tribute token contract reference
+        address tributeToken; // tribute token contract reference
         uint256 paymentRequested; // amount of tokens requested as payment
-        IERC20 paymentToken; // payment token contract reference
+        address paymentToken; // payment token contract reference
         uint256 startingPeriod; // the period in which voting can start for this proposal
         uint256 yesVotes; // the total number of YES votes for this proposal
         uint256 noVotes; // the total number of NO votes for this proposal
@@ -91,7 +90,7 @@ contract Moloch {
     }
 
     mapping(address => bool) public tokenWhitelist;
-    IERC20[] public approvedTokens;
+    address[] public approvedTokens;
 
     mapping(address => bool) public proposedToWhitelist;
     mapping(address => bool) public proposedToKick;
@@ -145,13 +144,13 @@ contract Moloch {
 
         summoner = _summoner;
 
-        depositToken = IERC20(_approvedTokens[0]);
+        depositToken = _approvedTokens[0];
 
         for (uint256 i = 0; i < _approvedTokens.length; i++) {
             require(_approvedTokens[i] != address(0), "_approvedToken cannot be 0");
             require(!tokenWhitelist[_approvedTokens[i]], "duplicate approved token");
             tokenWhitelist[_approvedTokens[i]] = true;
-            approvedTokens.push(IERC20(_approvedTokens[i]));
+            approvedTokens.push(_approvedTokens[i]);
         }
 
         guildBank = new GuildBank();
@@ -194,7 +193,7 @@ contract Moloch {
         require(members[applicant].jailed == 0, "proposal applicant must not be jailed");
 
         // collect tribute from applicant and store it in the Moloch until the proposal is processed
-        require(IERC20(tributeToken).transferFrom(msg.sender, address(this), tributeOffered), "tribute token transfer failed");
+        ERC20Wrapper.transferFrom(tributeToken, msg.sender, address(this), tributeOffered);
 
         bool[6] memory flags;
 
@@ -245,9 +244,9 @@ contract Moloch {
             sharesRequested : sharesRequested,
             lootRequested : lootRequested,
             tributeOffered : tributeOffered,
-            tributeToken : IERC20(tributeToken),
+            tributeToken : tributeToken,
             paymentRequested : paymentRequested,
-            paymentToken : IERC20(paymentToken),
+            paymentToken : paymentToken,
             startingPeriod : 0,
             yesVotes : 0,
             noVotes : 0,
@@ -264,7 +263,7 @@ contract Moloch {
 
     function sponsorProposal(uint256 proposalId) public onlyDelegate {
         // collect proposal deposit from sponsor and store it in the Moloch until the proposal is processed
-        require(depositToken.transferFrom(msg.sender, address(this), proposalDeposit), "proposal deposit token transfer failed");
+        ERC20Wrapper.transferFrom(depositToken, msg.sender, address(this), proposalDeposit);
 
         Proposal storage proposal = proposals[proposalId];
 
@@ -275,9 +274,9 @@ contract Moloch {
 
         // whitelist proposal
         if (proposal.flags[4]) {
-            require(!tokenWhitelist[address(proposal.tributeToken)], "cannot already have whitelisted the token");
-            require(!proposedToWhitelist[address(proposal.tributeToken)], 'already proposed to whitelist');
-            proposedToWhitelist[address(proposal.tributeToken)] = true;
+            require(!tokenWhitelist[proposal.tributeToken], "cannot already have whitelisted the token");
+            require(!proposedToWhitelist[proposal.tributeToken], 'already proposed to whitelist');
+            proposedToWhitelist[proposal.tributeToken] = true;
 
         // guild kick proposal
         } else if (proposal.flags[5]) {
@@ -358,7 +357,7 @@ contract Moloch {
         }
 
         // Make the proposal fail if it is requesting more tokens as payment than the available guild bank balance
-        if (!emergencyProcessing && proposal.paymentToken != IERC20(0) && proposal.paymentRequested > proposal.paymentToken.balanceOf(address(guildBank))) {
+        if (!emergencyProcessing && proposal.paymentToken != address(0) && proposal.paymentRequested > ERC20Wrapper.balanceOf(proposal.paymentToken, address(guildBank))) {
             didPass = false;
         }
 
@@ -389,10 +388,7 @@ contract Moloch {
             totalShares = totalShares.add(proposal.sharesRequested);
             totalLoot = totalLoot.add(proposal.lootRequested);
 
-            require(
-                proposal.tributeToken.transfer(address(guildBank), proposal.tributeOffered),
-                "token transfer to guild bank failed"
-            );
+            ERC20Wrapper.transfer(proposal.tributeToken, address(guildBank), proposal.tributeOffered);
 
             require(
                 guildBank.withdrawToken(proposal.paymentToken, proposal.applicant, proposal.paymentRequested),
@@ -404,10 +400,7 @@ contract Moloch {
         } else {
             // return all tokens to the applicant (skip if emergency processing)
             if (!emergencyProcessing) {
-                require(
-                    proposal.tributeToken.transfer(proposal.proposer, proposal.tributeOffered),
-                    "failing vote token transfer failed"
-                );
+                ERC20Wrapper.transfer(proposal.tributeToken, proposal.proposer, proposal.tributeOffered);
             }
         }
 
@@ -431,11 +424,11 @@ contract Moloch {
         if (didPass) {
             proposal.flags[2] = true; // didPass
 
-            tokenWhitelist[address(proposal.tributeToken)] = true;
+            tokenWhitelist[proposal.tributeToken] = true;
             approvedTokens.push(proposal.tributeToken);
         }
 
-        proposedToWhitelist[address(proposal.tributeToken)] = false;
+        proposedToWhitelist[proposal.tributeToken] = false;
 
         _returnDeposit(proposal.sponsor);
 
@@ -519,25 +512,19 @@ contract Moloch {
     }
 
     function _returnDeposit(address sponsor) internal {
-        require(
-            depositToken.transfer(msg.sender, processingReward),
-            "failed to send processing reward to msg.sender"
-        );
+        ERC20Wrapper.transfer(depositToken, msg.sender, processingReward);
 
-        require(
-            depositToken.transfer(sponsor, proposalDeposit.sub(processingReward)),
-            "failed to return proposal deposit to sponsor"
-        );
+        ERC20Wrapper.transfer(depositToken, sponsor, proposalDeposit.sub(processingReward));
     }
 
     function ragequit(uint256 sharesToBurn, uint256 lootToBurn) public onlyMember {
         _ragequit(msg.sender, sharesToBurn, lootToBurn, approvedTokens);
     }
 
-    function safeRagequit(uint256 sharesToBurn, uint256 lootToBurn, IERC20[] memory tokenList) public onlyMember {
+    function safeRagequit(uint256 sharesToBurn, uint256 lootToBurn, address[] memory tokenList) public onlyMember {
         // all tokens in tokenList must be in the tokenWhitelist
         for (uint256 i=0; i < tokenList.length; i++) {
-            require(tokenWhitelist[address(tokenList[i])], "token must be whitelisted");
+            require(tokenWhitelist[tokenList[i]], "token must be whitelisted");
 
             if (i > 0) {
                 require(tokenList[i] > tokenList[i - 1], "token list must be unique and in ascending order");
@@ -547,7 +534,7 @@ contract Moloch {
         _ragequit(msg.sender, sharesToBurn, lootToBurn, tokenList);
     }
 
-    function _ragequit(address memberAddress, uint256 sharesToBurn, uint256 lootToBurn, IERC20[] memory tokenList) internal {
+    function _ragequit(address memberAddress, uint256 sharesToBurn, uint256 lootToBurn, address[] memory tokenList) internal {
         uint256 initialTotalSharesAndLoot = totalShares.add(totalLoot);
 
         Member storage member = members[memberAddress];
@@ -604,10 +591,7 @@ contract Moloch {
 
         proposal.flags[3] = true; // cancelled
 
-        require(
-            proposal.tributeToken.transfer(proposal.proposer, proposal.tributeOffered),
-            "failed to return tribute to proposer"
-        );
+        ERC20Wrapper.transfer(proposal.tributeToken, proposal.proposer, proposal.tributeOffered);
 
         emit CancelProposal(proposalId, msg.sender);
     }
