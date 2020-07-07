@@ -22,7 +22,7 @@ contract Submitter {
     address tributeToken,
     uint256 paymentRequested,
     address paymentToken,
-    string memory details
+    bytes memory details
   ) public {
     uint256 proposalId = moloch.submitProposal(
       applicant,
@@ -40,7 +40,7 @@ contract Submitter {
 
   function submitWhitelistProposal(
     address tokenToWhitelist,
-    string memory details
+    bytes memory details
   ) public {
     uint256 proposalId = moloch.submitWhitelistProposal(
       tokenToWhitelist,
@@ -52,7 +52,7 @@ contract Submitter {
 
   function submitGuildKickProposal(
     address memberToKick,
-    string memory details
+    bytes memory details
   ) public {
     uint256 proposalId = moloch.submitGuildKickProposal(
       memberToKick,
